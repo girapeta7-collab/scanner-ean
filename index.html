@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EAN Scanner · Fechas de Vencimiento</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -58,50 +58,28 @@
     box-shadow: 0 2px 20px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1.5px solid var(--border);
   }
 
-  .camera-zone {
-    position: relative; background: #111; min-height: 220px;
-    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  /* SCANNER AREA — html5-qrcode injects its own elements here */
+  #reader {
+    width: 100%;
+    border: none !important;
+    border-radius: 0 !important;
   }
-  #video-preview {
-    width: 100%; height: 220px; object-fit: cover; display: none;
-  }
-  .scan-overlay { position: absolute; inset: 0; pointer-events: none; display: none; }
-  .scan-frame {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 240px; height: 90px;
-    border: 2.5px solid var(--accent); border-radius: 6px;
-  }
-  .scan-line {
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: scanMove 1.8s ease-in-out infinite;
-  }
-  @keyframes scanMove {
-    0%   { top: 0;    opacity: 1; }
-    90%  { top: 100%; opacity: 1; }
-    100% { top: 100%; opacity: 0; }
-  }
-  .corner { position: absolute; width: 18px; height: 18px; border-color: #fff; border-style: solid; }
-  .corner-tl { top:-2px;    left:-2px;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-  .corner-tr { top:-2px;    right:-2px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-  .corner-bl { bottom:-2px; left:-2px;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-  .corner-br { bottom:-2px; right:-2px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+  /* Hide html5-qrcode branding and extra UI */
+  #reader__dashboard_section_swaplink,
+  #reader img[alt="Info icon"],
+  #reader__filescan_input { display: none !important; }
+  #reader__scan_region { background: #111; }
+  #reader__scan_region video { width: 100% !important; }
+  #reader__dashboard { padding: 10px 14px !important; background: #f8f7f4 !important; border-top: 1px solid var(--border) !important; }
+  #reader__dashboard_section_csr span { font-family: 'DM Sans', sans-serif !important; font-size: 12px !important; }
+  #reader__status_span { font-family: 'Syne', sans-serif !important; font-size: 11px !important; letter-spacing: 1px !important; }
 
   .camera-placeholder {
     display: flex; flex-direction: column; align-items: center;
-    gap: 10px; color: #555; padding: 40px 20px;
+    gap: 10px; color: #555; padding: 40px 20px; background: #111;
   }
-  .camera-placeholder svg { opacity: 0.4; }
-  .camera-placeholder p { font-size: 13px; color: #666; text-align: center; }
-
-  .camera-status {
-    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
-    background: rgba(0,0,0,0.65); color: #fff; font-size: 11px;
-    padding: 5px 14px; border-radius: 20px;
-    font-family: 'Syne', sans-serif; letter-spacing: 1px;
-    display: none; white-space: nowrap;
-  }
+  .camera-placeholder svg { opacity: 0.35; }
+  .camera-placeholder p { font-size: 13px; color: #888; text-align: center; }
 
   .scan-actions {
     display: flex; gap: 8px; padding: 14px;
@@ -118,6 +96,7 @@
   .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); flex: 0.6; }
   .btn-outline:active { background: var(--bg); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-stop { background: #444; color: #fff; }
 
   .ean-result { padding: 16px; }
   .input-group { margin-bottom: 14px; }
@@ -126,9 +105,8 @@
     letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;
   }
   .ean-display {
-    width: 100%; background: #f8f7f4; border: 2px solid var(--border);
-    border-radius: 10px; padding: 14px 16px;
-    font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+    width: 100%; background: #f8f7f4; border: 2px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
     color: var(--text); letter-spacing: 3px; text-align: center; outline: none; transition: border-color 0.15s;
   }
   .ean-display:focus { border-color: var(--accent); }
@@ -141,9 +119,9 @@
   .date-input:focus { border-color: var(--accent2); }
   .add-btn {
     width: 100%; padding: 14px; background: var(--success); color: #fff;
-    border: none; border-radius: 10px;
-    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 14px; letter-spacing: 1px;
-    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: none; border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 800;
+    font-size: 14px; letter-spacing: 1px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
     transition: all 0.15s; margin-top: 4px;
   }
   .add-btn:active { transform: scale(0.98); }
@@ -185,9 +163,8 @@
 
   .export-bar {
     position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-    width: 100%; max-width: 540px;
-    background: var(--surface); border-top: 1.5px solid var(--border);
-    padding: 14px 16px; display: flex; gap: 10px; z-index: 50;
+    width: 100%; max-width: 540px; background: var(--surface);
+    border-top: 1.5px solid var(--border); padding: 14px 16px; display: flex; gap: 10px; z-index: 50;
   }
   .export-btn {
     flex: 1; padding: 14px; border: none; border-radius: 10px;
@@ -253,29 +230,18 @@
 <main>
   <div class="section-label">1 · Escanear código EAN</div>
   <div class="scan-card">
-    <div class="camera-zone" id="camera-zone">
-      <video id="video-preview" playsinline autoplay muted></video>
 
-      <div class="camera-placeholder" id="cam-placeholder">
-        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-        <p>Abre la cámara y apunta al código de barras del producto</p>
-      </div>
-
-      <div class="scan-overlay" id="scan-overlay">
-        <div class="scan-frame">
-          <div class="corner corner-tl"></div>
-          <div class="corner corner-tr"></div>
-          <div class="corner corner-bl"></div>
-          <div class="corner corner-br"></div>
-          <div class="scan-line"></div>
-        </div>
-      </div>
-
-      <div class="camera-status" id="camera-status">🔍 Buscando código...</div>
+    <!-- Placeholder visible cuando la cámara está apagada -->
+    <div class="camera-placeholder" id="cam-placeholder">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <p>Toca "Abrir cámara" y apunta al código de barras del producto</p>
     </div>
+
+    <!-- html5-qrcode se monta aquí -->
+    <div id="reader" style="display:none;"></div>
 
     <div class="scan-actions">
       <button class="btn btn-primary" id="btn-cam" onclick="toggleCamera()">
@@ -332,8 +298,6 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
       <polyline points="14 2 14 8 20 8"/>
-      <line x1="16" y1="13" x2="8" y2="13"/>
-      <line x1="16" y1="17" x2="8" y2="17"/>
     </svg>
     Descargar Excel
   </button>
@@ -350,7 +314,7 @@
   <div class="modal">
     <div class="modal-title">Enviar registros</div>
     <div class="modal-sub">Se abrirá tu app de correo con los datos listos.</div>
-    <div class="warn-badge">⚠️ Esta función abre tu cliente de correo (Gmail, Outlook, etc.) con los datos listos. No envía automáticamente.</div>
+    <div class="warn-badge">⚠️ Abre tu cliente de correo (Gmail, Outlook, etc.) con los datos listos. No envía automáticamente.</div>
     <input type="email" id="email-to" class="modal-input" placeholder="Destinatario: correo@empresa.com">
     <div class="modal-actions">
       <button class="modal-cancel" onclick="closeEmailModal()">Cancelar</button>
@@ -368,9 +332,9 @@
 <div class="flash" id="flash"></div>
 
 <script>
-// ── State ────────────────────────────────────────────────────────────
+// ── Estado ────────────────────────────────────────────────────────────
 let records = [];
-let codeReader = null;
+let html5QrCode = null;
 let scannerRunning = false;
 
 document.getElementById('date-input').min = new Date().toISOString().split('T')[0];
@@ -384,7 +348,7 @@ function showFlash(msg, color) {
   setTimeout(() => el.classList.remove('show'), 2400);
 }
 
-// ── Counter ───────────────────────────────────────────────────────────
+// ── Contador ──────────────────────────────────────────────────────────
 function updateCounter() {
   const n = records.length;
   document.getElementById('counter-badge').textContent = n + (n === 1 ? ' registro' : ' registros');
@@ -393,7 +357,7 @@ function updateCounter() {
   document.getElementById('clear-btn').style.display = n === 0 ? 'none' : '';
 }
 
-// ── Form ──────────────────────────────────────────────────────────────
+// ── Formulario ────────────────────────────────────────────────────────
 function onEanChange(el) {
   el.classList.toggle('filled', el.value.length > 4);
   checkAddBtn();
@@ -459,94 +423,115 @@ function captureManual() {
   inp.select();
 }
 
-// ── ZXing Camera Scanner ──────────────────────────────────────────────
+// ── Scanner con html5-qrcode ──────────────────────────────────────────
 async function toggleCamera() {
-  scannerRunning ? stopScanner() : await startScanner();
+  if (scannerRunning) {
+    await stopScanner();
+  } else {
+    await startScanner();
+  }
 }
 
 async function startScanner() {
-  const btn     = document.getElementById('btn-cam');
-  const video   = document.getElementById('video-preview');
-  const overlay = document.getElementById('scan-overlay');
-  const status  = document.getElementById('camera-status');
-  const holder  = document.getElementById('cam-placeholder');
+  const btn         = document.getElementById('btn-cam');
+  const readerDiv   = document.getElementById('reader');
+  const placeholder = document.getElementById('cam-placeholder');
 
   btn.disabled = true;
-  btn.innerHTML = '⏳ Iniciando cámara...';
+  btn.innerHTML = '⏳ Iniciando...';
 
   try {
-    // Wait for ZXing to be available
-    let attempts = 0;
-    while (typeof window.ZXing === 'undefined' && attempts < 30) {
-      await new Promise(r => setTimeout(r, 200));
-      attempts++;
-    }
-    if (typeof window.ZXing === 'undefined') throw new Error('Librería de escaneo no cargó. Verifica tu conexión a internet.');
+    // Crear instancia
+    html5QrCode = new Html5Qrcode("reader");
 
-    codeReader = new window.ZXing.BrowserMultiFormatReader();
+    // Mostrar el div del scanner
+    placeholder.style.display = 'none';
+    readerDiv.style.display    = 'block';
 
-    // List cameras
-    const devices = await window.ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-    if (!devices || devices.length === 0) throw new Error('No se detectó ninguna cámara.');
+    // Configuración: cámara trasera, región central
+    const config = {
+      fps: 10,
+      qrbox: { width: 250, height: 100 },
+      aspectRatio: 1.5,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+      ]
+    };
 
-    // Pick back camera (environment facing)
-    const backCam = devices.find(d =>
-      /back|rear|environ|trasera|posterior|0$/i.test(d.label)
-    ) || devices[devices.length - 1];
+    await html5QrCode.start(
+      { facingMode: "environment" },  // cámara trasera
+      config,
+      onScanSuccess,
+      onScanError   // errores silenciosos por frame
+    );
 
-    // Show scanner UI
-    holder.style.display  = 'none';
-    video.style.display   = 'block';
-    overlay.style.display = 'block';
-    status.style.display  = 'block';
     scannerRunning = true;
-
     btn.disabled = false;
     btn.innerHTML = '⏹ Detener cámara';
     btn.style.background = '#555';
 
-    // Start continuous decode
-    codeReader.decodeFromVideoDevice(backCam.deviceId, 'video-preview', (result, err) => {
-      if (result) {
-        const code = result.getText();
-        if (code && code.length >= 6) {
-          document.getElementById('ean-input').value = code;
-          onEanChange(document.getElementById('ean-input'));
-          showFlash('📷 EAN capturado: ' + code);
-          stopScanner();
-          setTimeout(() => document.getElementById('date-input').focus(), 400);
-        }
-      }
-      // Ignore NotFoundException — it fires every frame without a barcode
-    });
-
-  } catch(e) {
-    console.error('Scanner error:', e);
-    stopScanner();
-    const msg = e.message || 'Error al acceder a la cámara';
-    showFlash('⚠️ ' + msg, '#e84c1e');
-    // Show helpful tip in placeholder
-    document.getElementById('cam-placeholder').innerHTML = `
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e84c1e" stroke-width="1.5" opacity="0.7">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+  } catch (err) {
+    console.error('Error al iniciar scanner:', err);
+    readerDiv.style.display    = 'none';
+    placeholder.style.display  = 'flex';
+    placeholder.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e84c1e" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><circle cx="12" cy="16" r="1" fill="#e84c1e"/>
       </svg>
-      <p style="color:#e84c1e;font-weight:600;font-size:12px;">${msg}</p>
-      <p style="font-size:11px;color:#888;">Usa el botón ✏️ Manual para ingresar el código</p>
+      <p style="color:#e84c1e;font-size:12px;font-weight:600;">No se pudo acceder a la cámara</p>
+      <p style="font-size:11px;color:#888;">Verifica que diste permiso de cámara al navegador, o usa el botón ✏️ Manual</p>
     `;
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="13" r="4"/><path d="M5 7H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2l-2-3H9L7 7H5z"/></svg> Abrir cámara`;
+    btn.style.background = 'var(--accent)';
   }
 }
 
-function stopScanner() {
-  if (codeReader) {
-    try { codeReader.reset(); } catch(_) {}
-    codeReader = null;
+function onScanSuccess(decodedText) {
+  if (!decodedText || decodedText.length < 6) return;
+
+  // Llenar el campo EAN
+  const inp = document.getElementById('ean-input');
+  inp.value = decodedText;
+  onEanChange(inp);
+  showFlash('📷 EAN capturado: ' + decodedText);
+
+  // Detener scanner y enfocar fecha
+  stopScanner().then(() => {
+    setTimeout(() => document.getElementById('date-input').focus(), 400);
+  });
+}
+
+function onScanError(err) {
+  // Ignorar errores por frame (no barcode found) — son normales
+}
+
+async function stopScanner() {
+  if (html5QrCode && scannerRunning) {
+    try {
+      await html5QrCode.stop();
+      html5QrCode.clear();
+    } catch(e) { console.warn(e); }
+    html5QrCode = null;
   }
   scannerRunning = false;
 
-  document.getElementById('video-preview').style.display   = 'none';
-  document.getElementById('scan-overlay').style.display    = 'none';
-  document.getElementById('camera-status').style.display   = 'none';
+  document.getElementById('reader').style.display    = 'none';
   document.getElementById('cam-placeholder').style.display = 'flex';
+
+  // Restaurar placeholder original
+  document.getElementById('cam-placeholder').innerHTML = `
+    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.2">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+    <p>Toca "Abrir cámara" y apunta al código de barras del producto</p>
+  `;
 
   const btn = document.getElementById('btn-cam');
   btn.disabled = false;
