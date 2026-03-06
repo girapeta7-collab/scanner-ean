@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EAN Scanner · Fechas de Vencimiento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0ede6;
+    --surface: #ffffff;
+    --accent: #e84c1e;
+    --accent2: #1a1a2e;
+    --text: #1a1a2e;
+    --muted: #9a9488;
+    --border: #ddd8ce;
+    --success: #2d9c5a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  header {
+    background: var(--accent2);
+    padding: 18px 20px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 36px; height: 36px; background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 14px;
+    color: #fff; border-radius: 6px;
+  }
+  .logo-text { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; color: #fff; }
+  .logo-sub  { font-size: 10px; color: #888; letter-spacing: 2px; text-transform: uppercase; }
+  .counter-badge {
+    background: var(--accent); color: #fff;
+    padding: 6px 14px; border-radius: 20px;
+    font-size: 12px; font-family: 'Syne', sans-serif; font-weight: 700;
+  }
+
+  main { padding: 20px 16px 120px; max-width: 540px; margin: 0 auto; }
+
+  .section-label {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px;
+    letter-spacing: 3px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+  }
+  .scan-card {
+    background: var(--surface); border-radius: 16px; overflow: hidden;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.06); margin-bottom: 16px; border: 1.5px solid var(--border);
+  }
+
+  .camera-zone {
+    position: relative; background: #111; min-height: 220px;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  #video-preview {
+    width: 100%; height: 220px; object-fit: cover; display: none;
+  }
+  .scan-overlay { position: absolute; inset: 0; pointer-events: none; display: none; }
+  .scan-frame {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 240px; height: 90px;
+    border: 2.5px solid var(--accent); border-radius: 6px;
+  }
+  .scan-line {
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scanMove 1.8s ease-in-out infinite;
+  }
+  @keyframes scanMove {
+    0%   { top: 0;    opacity: 1; }
+    90%  { top: 100%; opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+  .corner { position: absolute; width: 18px; height: 18px; border-color: #fff; border-style: solid; }
+  .corner-tl { top:-2px;    left:-2px;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+  .corner-tr { top:-2px;    right:-2px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+  .corner-bl { bottom:-2px; left:-2px;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+  .corner-br { bottom:-2px; right:-2px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+  .camera-placeholder {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; color: #555; padding: 40px 20px;
+  }
+  .camera-placeholder svg { opacity: 0.4; }
+  .camera-placeholder p { font-size: 13px; color: #666; text-align: center; }
+
+  .camera-status {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.65); color: #fff; font-size: 11px;
+    padding: 5px 14px; border-radius: 20px;
+    font-family: 'Syne', sans-serif; letter-spacing: 1px;
+    display: none; white-space: nowrap;
+  }
+
+  .scan-actions {
+    display: flex; gap: 8px; padding: 14px;
+    background: #f8f7f4; border-top: 1px solid var(--border);
+  }
+  .btn {
+    flex: 1; padding: 12px; border: none; border-radius: 10px;
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px;
+    letter-spacing: 0.5px; cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:active { transform: scale(0.97); background: #c43a14; }
+  .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); flex: 0.6; }
+  .btn-outline:active { background: var(--bg); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .ean-result { padding: 16px; }
+  .input-group { margin-bottom: 14px; }
+  .input-label {
+    font-size: 11px; font-family: 'Syne', sans-serif; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;
+  }
+  .ean-display {
+    width: 100%; background: #f8f7f4; border: 2px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+    color: var(--text); letter-spacing: 3px; text-align: center; outline: none; transition: border-color 0.15s;
+  }
+  .ean-display:focus { border-color: var(--accent); }
+  .ean-display.filled { background: #fff8f6; border-color: var(--accent); color: var(--accent); }
+  .date-input {
+    width: 100%; background: #f8f7f4; border: 2px solid var(--border); border-radius: 10px;
+    padding: 13px 16px; font-family: 'DM Sans', sans-serif; font-size: 16px;
+    color: var(--text); outline: none; transition: border-color 0.15s; -webkit-appearance: none;
+  }
+  .date-input:focus { border-color: var(--accent2); }
+  .add-btn {
+    width: 100%; padding: 14px; background: var(--success); color: #fff;
+    border: none; border-radius: 10px;
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 14px; letter-spacing: 1px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: all 0.15s; margin-top: 4px;
+  }
+  .add-btn:active { transform: scale(0.98); }
+  .add-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+  .flash {
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--success); color: #fff; padding: 12px 24px; border-radius: 30px;
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+    z-index: 200; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap;
+  }
+  .flash.show { opacity: 1; }
+
+  .records-section { margin-top: 28px; }
+  .records-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .records-list { display: flex; flex-direction: column; gap: 8px; }
+  .record-item {
+    background: var(--surface); border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;
+    animation: slideIn 0.25s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .record-ean { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 1px; }
+  .record-date { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .record-num {
+    width: 28px; height: 28px; background: var(--bg); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-family: 'Syne', sans-serif; font-weight: 700; color: var(--muted);
+  }
+  .record-del { background: transparent; border: none; color: #ccc; cursor: pointer; padding: 4px; font-size: 16px; transition: color 0.15s; }
+  .record-del:hover { color: var(--accent); }
+  .empty-state {
+    text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px;
+    background: var(--surface); border-radius: 16px; border: 1.5px dashed var(--border);
+  }
+
+  .export-bar {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 540px;
+    background: var(--surface); border-top: 1.5px solid var(--border);
+    padding: 14px 16px; display: flex; gap: 10px; z-index: 50;
+  }
+  .export-btn {
+    flex: 1; padding: 14px; border: none; border-radius: 10px;
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.5px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s;
+  }
+  .export-excel { background: #1d6f42; color: #fff; }
+  .export-excel:active { background: #155233; }
+  .export-email { background: var(--accent2); color: #fff; }
+  .export-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    z-index: 100; align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 20px 20px 0 0;
+    padding: 24px 20px 36px; width: 100%; max-width: 540px; animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(40px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+  .modal-title { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 4px; }
+  .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+  .modal-input {
+    width: 100%; background: var(--bg); border: 2px solid var(--border); border-radius: 10px;
+    padding: 13px 16px; font-family: 'DM Sans', sans-serif; font-size: 15px;
+    color: var(--text); outline: none; margin-bottom: 12px;
+  }
+  .modal-input:focus { border-color: var(--accent2); }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-cancel {
+    flex: 0.5; padding: 13px; background: transparent; border: 1.5px solid var(--border);
+    border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+    cursor: pointer; color: var(--muted);
+  }
+  .modal-send {
+    flex: 1; padding: 13px; background: var(--accent2); color: #fff; border: none;
+    border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .warn-badge {
+    background: #fff8e6; border: 1px solid #f0cc80; border-radius: 8px;
+    padding: 10px 14px; font-size: 12px; color: #7a5500; margin-bottom: 14px; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">EAN</div>
+    <div>
+      <div class="logo-text">Scanner PDV</div>
+      <div class="logo-sub">Fechas de Vencimiento</div>
+    </div>
+  </div>
+  <div class="counter-badge" id="counter-badge">0 registros</div>
+</header>
+
+<main>
+  <div class="section-label">1 · Escanear código EAN</div>
+  <div class="scan-card">
+    <div class="camera-zone" id="camera-zone">
+      <video id="video-preview" playsinline autoplay muted></video>
+
+      <div class="camera-placeholder" id="cam-placeholder">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <p>Abre la cámara y apunta al código de barras del producto</p>
+      </div>
+
+      <div class="scan-overlay" id="scan-overlay">
+        <div class="scan-frame">
+          <div class="corner corner-tl"></div>
+          <div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div>
+          <div class="corner corner-br"></div>
+          <div class="scan-line"></div>
+        </div>
+      </div>
+
+      <div class="camera-status" id="camera-status">🔍 Buscando código...</div>
+    </div>
+
+    <div class="scan-actions">
+      <button class="btn btn-primary" id="btn-cam" onclick="toggleCamera()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="13" r="4"/>
+          <path d="M5 7H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2l-2-3H9L7 7H5z"/>
+        </svg>
+        Abrir cámara
+      </button>
+      <button class="btn btn-outline" onclick="captureManual()">✏️ Manual</button>
+    </div>
+  </div>
+
+  <div class="section-label">2 · Verificar y registrar</div>
+  <div class="scan-card">
+    <div class="ean-result">
+      <div class="input-group">
+        <label class="input-label" for="ean-input">Código EAN</label>
+        <input type="text" id="ean-input" class="ean-display"
+          placeholder="0000000000000" inputmode="numeric" maxlength="14"
+          oninput="onEanChange(this)">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="date-input">Fecha de Vencimiento</label>
+        <input type="date" id="date-input" class="date-input">
+      </div>
+      <button class="add-btn" id="add-btn" onclick="addRecord()" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="16"/>
+          <line x1="8" y1="12" x2="16" y2="12"/>
+        </svg>
+        AGREGAR REGISTRO
+      </button>
+    </div>
+  </div>
+
+  <div class="records-section">
+    <div class="records-header">
+      <div class="section-label" style="margin:0">3 · Registros capturados</div>
+      <button id="clear-btn" onclick="clearAll()"
+        style="display:none;background:transparent;border:none;font-size:11px;color:var(--muted);cursor:pointer;font-family:'Syne',sans-serif;font-weight:700;letter-spacing:1px;">
+        LIMPIAR TODO
+      </button>
+    </div>
+    <div class="records-list" id="records-list">
+      <div class="empty-state">Aún no hay registros.<br>Escanea un código para comenzar.</div>
+    </div>
+  </div>
+</main>
+
+<div class="export-bar">
+  <button class="export-btn export-excel" id="btn-excel" onclick="exportExcel()" disabled>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+    Descargar Excel
+  </button>
+  <button class="export-btn export-email" id="btn-email" onclick="openEmailModal()" disabled>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+      <polyline points="22,6 12,13 2,6"/>
+    </svg>
+    Enviar por Email
+  </button>
+</div>
+
+<div class="modal-backdrop" id="email-modal">
+  <div class="modal">
+    <div class="modal-title">Enviar registros</div>
+    <div class="modal-sub">Se abrirá tu app de correo con los datos listos.</div>
+    <div class="warn-badge">⚠️ Esta función abre tu cliente de correo (Gmail, Outlook, etc.) con los datos listos. No envía automáticamente.</div>
+    <input type="email" id="email-to" class="modal-input" placeholder="Destinatario: correo@empresa.com">
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeEmailModal()">Cancelar</button>
+      <button class="modal-send" onclick="sendEmail()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Abrir correo
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────
+let records = [];
+let codeReader = null;
+let scannerRunning = false;
+
+document.getElementById('date-input').min = new Date().toISOString().split('T')[0];
+
+// ── Flash ─────────────────────────────────────────────────────────────
+function showFlash(msg, color) {
+  const el = document.getElementById('flash');
+  el.textContent = msg;
+  el.style.background = color || 'var(--success)';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ── Counter ───────────────────────────────────────────────────────────
+function updateCounter() {
+  const n = records.length;
+  document.getElementById('counter-badge').textContent = n + (n === 1 ? ' registro' : ' registros');
+  document.getElementById('btn-excel').disabled = n === 0;
+  document.getElementById('btn-email').disabled = n === 0;
+  document.getElementById('clear-btn').style.display = n === 0 ? 'none' : '';
+}
+
+// ── Form ──────────────────────────────────────────────────────────────
+function onEanChange(el) {
+  el.classList.toggle('filled', el.value.length > 4);
+  checkAddBtn();
+}
+function checkAddBtn() {
+  const ean  = document.getElementById('ean-input').value.trim();
+  const date = document.getElementById('date-input').value;
+  document.getElementById('add-btn').disabled = !(ean.length >= 6 && date);
+}
+document.getElementById('date-input').addEventListener('change', checkAddBtn);
+
+function addRecord() {
+  const ean  = document.getElementById('ean-input').value.trim();
+  const date = document.getElementById('date-input').value;
+  if (!ean || !date) return;
+  const [y, m, d] = date.split('-');
+  const dateFormatted = `${d}/${m}/${y}`;
+  const timestamp = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+  records.unshift({ ean, date, dateFormatted, timestamp, id: Date.now() });
+  renderRecords();
+  updateCounter();
+  showFlash('✓ Registro agregado');
+  document.getElementById('ean-input').value = '';
+  document.getElementById('ean-input').classList.remove('filled');
+  document.getElementById('date-input').value = '';
+  document.getElementById('add-btn').disabled = true;
+}
+
+function renderRecords() {
+  const list = document.getElementById('records-list');
+  if (records.length === 0) {
+    list.innerHTML = '<div class="empty-state">Aún no hay registros.<br>Escanea un código para comenzar.</div>';
+    return;
+  }
+  list.innerHTML = records.map((r, i) => `
+    <div class="record-item">
+      <div class="record-num">${records.length - i}</div>
+      <div style="flex:1;margin:0 12px;">
+        <div class="record-ean">${r.ean}</div>
+        <div class="record-date">Vence: ${r.dateFormatted} · ${r.timestamp}</div>
+      </div>
+      <button class="record-del" onclick="deleteRecord(${r.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+function deleteRecord(id) {
+  records = records.filter(r => r.id !== id);
+  renderRecords();
+  updateCounter();
+}
+
+function clearAll() {
+  if (!confirm('¿Eliminar todos los registros?')) return;
+  records = [];
+  renderRecords();
+  updateCounter();
+}
+
+function captureManual() {
+  const inp = document.getElementById('ean-input');
+  inp.focus();
+  inp.select();
+}
+
+// ── ZXing Camera Scanner ──────────────────────────────────────────────
+async function toggleCamera() {
+  scannerRunning ? stopScanner() : await startScanner();
+}
+
+async function startScanner() {
+  const btn     = document.getElementById('btn-cam');
+  const video   = document.getElementById('video-preview');
+  const overlay = document.getElementById('scan-overlay');
+  const status  = document.getElementById('camera-status');
+  const holder  = document.getElementById('cam-placeholder');
+
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Iniciando cámara...';
+
+  try {
+    // Wait for ZXing to be available
+    let attempts = 0;
+    while (typeof window.ZXing === 'undefined' && attempts < 30) {
+      await new Promise(r => setTimeout(r, 200));
+      attempts++;
+    }
+    if (typeof window.ZXing === 'undefined') throw new Error('Librería de escaneo no cargó. Verifica tu conexión a internet.');
+
+    codeReader = new window.ZXing.BrowserMultiFormatReader();
+
+    // List cameras
+    const devices = await window.ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    if (!devices || devices.length === 0) throw new Error('No se detectó ninguna cámara.');
+
+    // Pick back camera (environment facing)
+    const backCam = devices.find(d =>
+      /back|rear|environ|trasera|posterior|0$/i.test(d.label)
+    ) || devices[devices.length - 1];
+
+    // Show scanner UI
+    holder.style.display  = 'none';
+    video.style.display   = 'block';
+    overlay.style.display = 'block';
+    status.style.display  = 'block';
+    scannerRunning = true;
+
+    btn.disabled = false;
+    btn.innerHTML = '⏹ Detener cámara';
+    btn.style.background = '#555';
+
+    // Start continuous decode
+    codeReader.decodeFromVideoDevice(backCam.deviceId, 'video-preview', (result, err) => {
+      if (result) {
+        const code = result.getText();
+        if (code && code.length >= 6) {
+          document.getElementById('ean-input').value = code;
+          onEanChange(document.getElementById('ean-input'));
+          showFlash('📷 EAN capturado: ' + code);
+          stopScanner();
+          setTimeout(() => document.getElementById('date-input').focus(), 400);
+        }
+      }
+      // Ignore NotFoundException — it fires every frame without a barcode
+    });
+
+  } catch(e) {
+    console.error('Scanner error:', e);
+    stopScanner();
+    const msg = e.message || 'Error al acceder a la cámara';
+    showFlash('⚠️ ' + msg, '#e84c1e');
+    // Show helpful tip in placeholder
+    document.getElementById('cam-placeholder').innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e84c1e" stroke-width="1.5" opacity="0.7">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <p style="color:#e84c1e;font-weight:600;font-size:12px;">${msg}</p>
+      <p style="font-size:11px;color:#888;">Usa el botón ✏️ Manual para ingresar el código</p>
+    `;
+  }
+}
+
+function stopScanner() {
+  if (codeReader) {
+    try { codeReader.reset(); } catch(_) {}
+    codeReader = null;
+  }
+  scannerRunning = false;
+
+  document.getElementById('video-preview').style.display   = 'none';
+  document.getElementById('scan-overlay').style.display    = 'none';
+  document.getElementById('camera-status').style.display   = 'none';
+  document.getElementById('cam-placeholder').style.display = 'flex';
+
+  const btn = document.getElementById('btn-cam');
+  btn.disabled = false;
+  btn.style.background = 'var(--accent)';
+  btn.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <circle cx="12" cy="13" r="4"/>
+      <path d="M5 7H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2l-2-3H9L7 7H5z"/>
+    </svg>
+    Abrir cámara`;
+}
+
+// ── Excel ─────────────────────────────────────────────────────────────
+function exportExcel() {
+  if (records.length === 0) return;
+  const rows = [['#', 'CÓDIGO EAN', 'FECHA DE VENCIMIENTO', 'FECHA DE CAPTURA']];
+  records.forEach((r, i) => rows.push([records.length - i, r.ean, r.dateFormatted, r.timestamp]));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 22 }, { wch: 28 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Vencimientos');
+  XLSX.writeFile(wb, `vencimientos_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showFlash('✓ Excel descargado');
+}
+
+// ── Email ─────────────────────────────────────────────────────────────
+function openEmailModal()  { document.getElementById('email-modal').classList.add('open'); }
+function closeEmailModal() { document.getElementById('email-modal').classList.remove('open'); }
+
+function sendEmail() {
+  const to = document.getElementById('email-to').value.trim();
+  if (!to) { document.getElementById('email-to').focus(); return; }
+  const dateStr = new Date().toLocaleDateString('es-CO');
+  let body = `REPORTE FECHAS DE VENCIMIENTO\nFecha: ${dateStr}  |  Total: ${records.length} registros\n\n`;
+  body += `#\tCÓDIGO EAN\tFECHA VENCIMIENTO\tCAPTURADO\n${'─'.repeat(60)}\n`;
+  records.forEach((r, i) => {
+    body += `${records.length - i}\t${r.ean}\t${r.dateFormatted}\t\t${r.timestamp}\n`;
+  });
+  body += `\n─ Enviado desde Scanner PDV ─`;
+  const subject = `Vencimientos PDV · ${dateStr} · ${records.length} registros`;
+  window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  closeEmailModal();
+  showFlash('✓ Abriendo cliente de correo...');
+}
+
+document.getElementById('email-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeEmailModal();
+});
+
+updateCounter();
+</script>
+</body>
+</html>
